@@ -112,7 +112,6 @@ EPISODES = 100_000
 SEEDS_PER_EPISODE = 1
 
 ACTION_SIZE = 3
-# main_net = SNN(OBS_SIZE, 128, 128, 0.9, surrogate.fast_sigmoid(slope=25))
 main_net = SNN(OBS_SIZE, 128, 128, 0.9, surrogate.fast_sigmoid(slope=25))
 
 # loss and optimizer
@@ -131,7 +130,6 @@ for episode in range(EPISODES):
         obs = None
         prev_position = get_racetrack_position(env)
         loss_components = []
-        step = 0
         while not (done or truncated):
             action = 0
             if obs is not None:
@@ -142,15 +140,15 @@ for episode in range(EPISODES):
                 left_sum = 0
                 right_sum = 0
                 for i in range(64):
-                    left_sum += action_spikes[i] * i/64
-                    right_sum += action_spikes[i + 64] * i/64
+                    left_sum += action_spikes[i]
+                    right_sum += action_spikes[i + 64]
 
-                action = (right_sum - left_sum) / 64 
+                action = (right_sum - left_sum).item() / 64
 
                 position = get_racetrack_position(env)
-                # position 1, turn right -1 -> 0, turn right 1 -> 2
-                # position -1, turn right 1 -> 0, turn right -1 -> 2
-                turn_right_amount = (right_sum - left_sum) / 128
+                # position 1, turn right -1 -> 0, turn right 1 -> worst
+                # position -1, turn right 1 -> 0, turn right -1 -> worst
+                turn_right_amount = (right_sum - left_sum) / 64
                 loss = (position + turn_right_amount) ** 4
 
                 loss_components.append(loss)
@@ -168,15 +166,12 @@ for episode in range(EPISODES):
             
             if info["rewards"]["on_road_reward"] == 0:
                 done = True
-                # reward -= 5
 
             env.render()
             prev_position = position
             obs = next_obs
-        
 
         # learn
-        print('learn')
         optimizer.zero_grad()
         loss = sum(loss_components)
         loss.backward()
