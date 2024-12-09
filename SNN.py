@@ -5,18 +5,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import random
-import math
-from time import sleep
 
 import snntorch as snn
 from snntorch import surrogate
 
-from matplotlib import pyplot as plt
-
 env = gymnasium.make("racetrack-v0", render_mode='rgb_array')
 
-# env.unwrapped.config["lane_centering_reward"] = 10
 env.unwrapped.config["vehicles_count"] = 0
 observation = {
         "type": "Kinematics",
@@ -30,48 +24,6 @@ OBS_SIZE = 3
 
 env.unwrapped.config["other_vehicles"] = 0
 
-class Model(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size=100):
-        super().__init__()
-        self.input_size = input_size
-        self.output_size = output_size
-        self.layer_1 = nn.Linear(input_size, hidden_size)
-        self.norm_1 = nn.BatchNorm1d(hidden_size)
-        self.layer_2 = nn.Linear(hidden_size, hidden_size)
-        self.norm_2 = nn.BatchNorm1d(hidden_size)
-        self.layer_3 = nn.Linear(hidden_size, output_size)
-        self.norm_3 = nn.BatchNorm1d(output_size)
-
-    def forward(self, obs, batch_size=1):
-        
-        batch_norm_on = batch_size != 1
-        if obs is None:
-            retval = torch.zeros(self.output_size)
-            return retval
-        if not isinstance(obs, torch.Tensor):
-            x = torch.tensor(obs)
-        else:
-            x = obs
-
-        x = x.view(-1, self.input_size)
-
-        x = self.layer_1(x)
-        if batch_norm_on:
-            x = self.norm_1(x)
-        x = F.relu(x)
-        x = self.layer_2(x)
-        if batch_norm_on:
-            x = self.norm_2(x)
-        x = F.relu(x)
-        x = self.layer_3(x)
-        if batch_norm_on:
-            x = self.norm_3(x)
-        # x = F.softmax(x, dim=1) # for probabilities
-        # x = F.tanh(x)
-        # for DQN, don't use a final activation function
-        
-        return x
-
 class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, beta, spike_grad):
         super().__init__()
@@ -80,7 +32,7 @@ class SNN(nn.Module):
         self.lif1 = snn.Leaky(beta=beta, spike_grad=spike_grad)
         self.lin2 = nn.Linear(hidden_size, hidden_size)
         self.lif2 = snn.Leaky(beta=beta, spike_grad=spike_grad)
-        self.lin3 = nn.Linear(hidden_size, hidden_size)
+        self.lin3 = nn.Linear(hidden_size, output_size)
         self.lif3 = snn.Leaky(beta=beta, spike_grad=spike_grad)
         self.reset()
 
@@ -143,13 +95,12 @@ for episode in range(EPISODES):
                     left_sum += action_spikes[i]
                     right_sum += action_spikes[i + 64]
 
-                action = (right_sum - left_sum).item() / 64
+                action_tensor = (right_sum - left_sum) / 64
+                action = action_tensor.item()
 
                 position = get_racetrack_position(env)
-                # position 1, turn right -1 -> 0, turn right 1 -> worst
-                # position -1, turn right 1 -> 0, turn right -1 -> worst
                 turn_right_amount = (right_sum - left_sum) / 64
-                loss = (position + turn_right_amount) ** 4
+                loss = (position + action_tensor) ** 4
 
                 loss_components.append(loss)
             
